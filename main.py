@@ -8,7 +8,7 @@ from sklearn.metrics.pairwise import linear_kernel
 app = FastAPI()
 
 # Cargamos el dataframe
-data = pd.read_csv('PI_RuthCastañeda/data_preparada_parte1.csv')
+data = pd.read_csv('data_preparadaML.csv')
 
 # Necesario para funcion recomendacion:
 # Preprocesamiento de datos
