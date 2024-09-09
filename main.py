@@ -3,26 +3,13 @@ import pandas as pd
 import datetime
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
+from sklearn.neighbors import NearestNeighbors
 
 # Crear una instancia de la aplicación
 app = FastAPI()
 
 # Cargamos el dataframe
 data = pd.read_csv('data_preparadaML.csv')
-
-# Necesario para funcion recomendacion:
-# Preprocesamiento de datos
-# Convertir los valores de la columna 'genre' en cadenas de texto
-data['genre'] = data['genre'].apply(lambda x: ' '.join(set(str(x).split(','))))
-# data['genre'] = data['genre'].apply(lambda x: ' '.join(set(str(x))))
-
-# Crear una matriz TF-IDF para el texto del título de las películas
-stopwords_custom = ["the", "and", "in", "of"]  # Agrega aquí tus stopwords personalizados
-tfidf = TfidfVectorizer(stop_words=stopwords_custom)
-tfidf_matrix = tfidf.fit_transform(data['title'])
-
-# Calcular la similitud del coseno entre los títulos de las películas
-cosine_similarities = linear_kernel(tfidf_matrix, tfidf_matrix)
 
 # Definir la función con el decorador
 @app.get("/cantidad_filmaciones_mes/{mes}")
@@ -190,41 +177,42 @@ def get_director(nombre_director: str):
     }
     
     return respuesta
-
 @app.get('/recomendacion/{titulo}')
+# Función: Recomendación de películas
 def recomendacion(titulo):
     # Convertir el título a minúsculas para la búsqueda
     titulo = titulo.lower()
-    # Verificar si el título está en el DataFrame
-    if titulo not in data['title'].str.lower().values:
+
+    # Verificar si el título existe en el dataset (ignorando mayúsculas)
+    movie = data[data['title'].str.lower() == titulo]
+    
+    if movie.empty:
         return f"No se encontró ninguna película con el título '{titulo}'."
 
-    # Encontrar el índice de la película con el título dado
-    indices = pd.Series(data.index, index=data['title'].str.lower()).drop_duplicates()
-    idx = indices[titulo]
-    
-           # Verificar si idx es una serie 
-    if isinstance(idx, pd.Series):
-        #Si es una serie, obtener el primer valor, que corresponde al índice de la primera película con ese título
-        idx = idx.iloc[0]
+    # Obtener la popularidad de la película encontrada
+    movie_popularity = movie['popularity'].values[0]
 
-    # Calcular las puntuaciones de similitud de todas las películas con la película dada
-    sim_scores = list(enumerate(cosine_similarities[idx]))
+    # Crear una matriz de características para el modelo de vecinos más cercanos
+    features = data[['popularity']]
+    genres = data['genre'].str.get_dummies(sep=' ')
+    features = pd.concat([features, genres], axis=1)
 
-    # Ordenar las películas por puntaje de similitud en orden descendente
-    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
+    # Manejar valores faltantes (NaN) reemplazándolos por ceros
+    features = features.fillna(0)
 
-    # Obtener los índices de las películas más similares (excluyendo la película dada)
-    sim_scores = sim_scores[1:6]  # Obtener las 5 películas más similares
-    
-    movie_indices = [x[0] for x in sim_scores]
-    respuesta_recomendacion = data['title'].iloc[movie_indices].tolist()
-    
-     # Eliminar el título de la película original de la lista de recomendaciones
-    movie_indices = [i for i in movie_indices if data['title'].iloc[i].lower() != titulo]
+    # Crear el modelo de vecinos más cercanos
+    nn_model = NearestNeighbors(n_neighbors=6, metric='euclidean')
+    nn_model.fit(features)
 
-    # Devolver los títulos de las películas más similares
-    respuesta_recomendacion = data['title'].iloc[movie_indices].tolist()
+    # Encontrar las películas más similares a la que seleccionamos
+    movie_index = movie.index[0]  # Obtener el índice de la película encontrada
+    _, indices = nn_model.kneighbors([features.iloc[movie_index].values], n_neighbors=6)
+
+    # Obtener los títulos de las películas recomendadas, excluyendo la original
+    recomendacion = data.iloc[indices[0][1:]]['title']
+
+    return recomendacion.tolist()
+
     
     
     
