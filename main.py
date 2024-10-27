@@ -1,15 +1,16 @@
+
 from fastapi import FastAPI
 import pandas as pd
 import datetime
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import linear_kernel
-from sklearn.neighbors import NearestNeighbors
+import pyarrow.parquet as pq
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
 
 # Crear una instancia de la aplicación
 app = FastAPI()
 
 # Cargamos el dataframe
-data = pd.read_csv('data_preparadaML.csv')
+data = pd.read_parquet('data_preparada_ML.parquet')
 
 # Definir la función con el decorador
 @app.get("/cantidad_filmaciones_mes/{mes}")
@@ -180,47 +181,26 @@ def get_director(nombre_director: str):
 @app.get('/recomendacion/{titulo}')
 # Función: Recomendación de películas
 def recomendacion(titulo):
-    # Convertir el título a minúsculas para la búsqueda
+    
     titulo = titulo.lower()
+    pelicula = data[data['title'].str.lower() == titulo]
 
-    # Verificar si el título existe en el dataset (ignorando mayúsculas)
-    movie = data[data['title'].str.lower() == titulo]
-    
-    if movie.empty:
-        return f"No se encontró ninguna película con el título '{titulo}'."
+    if pelicula.empty:
+        return {"message": "Película no encontrada."}
 
-    # Obtener la popularidad de la película encontrada
-    movie_popularity = movie['popularity'].values[0]
+    recomendacion_info = pelicula['recommendation'].iloc[0]
 
-    # Crear una matriz de características para el modelo de vecinos más cercanos
-    features = data[['popularity']]
-    genres = data['genre'].str.get_dummies(sep=' ')
-    features = pd.concat([features, genres], axis=1)
+    # Verifica si el campo de recomendación es nulo o vacío
+    if pd.isna(recomendacion_info) or not recomendacion_info:
+        return {"message": f"No hay recomendaciones disponibles para '{titulo.capitalize()}'."}
 
-    # Manejar valores faltantes (NaN) reemplazándolos por ceros
-    features = features.fillna(0)
+    return {'titulo': titulo.capitalize(), 'recomendacion': recomendacion_info}
 
-    # Crear el modelo de vecinos más cercanos
-    nn_model = NearestNeighbors(n_neighbors=6, metric='euclidean')
-    nn_model.fit(features)
-
-    # Encontrar las películas más similares a la que seleccionamos
-    movie_index = movie.index[0]  # Obtener el índice de la película encontrada
-    _, indices = nn_model.kneighbors([features.iloc[movie_index].values], n_neighbors=6)
-
-    # Obtener los títulos de las películas recomendadas, excluyendo la original
-    recomendacion = data.iloc[indices[0][1:]]['title']
-
-    return recomendacion.tolist()
 
     
-    
-    
-    return {'lista recomendada': respuesta_recomendacion}
-
 
 # Ejecutar la aplicación con Uvicorn
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=80)
+    uvicorn.run(app, host='0.0.0.0', port=8000)
 
